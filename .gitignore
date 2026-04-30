@@ -1,0 +1,14 @@
+# 忽略前端依赖
+node_modules/
+.next/
+
+# 忽略 Python 缓存和虚拟环境
+__pycache__/
+*.pyc
+venv/
+env/
+
+# 忽略大体积模型文件和 macOS 隐藏文件
+*.pth
+*.pt
+.DS_Store
