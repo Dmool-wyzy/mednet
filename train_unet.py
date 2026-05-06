@@ -43,10 +43,10 @@ class BrainMRIDataset(Dataset):
         img_path = self.image_paths[idx]
         mask_path = img_path.replace('.tif', '_mask.tif')
 
-        # 读取并执行高级预处理
+        # 读取并执行高级预处理 (预处理在BGR空间进行，与server.py一致)
         image = cv2.imread(img_path)
+        image = apply_medical_preprocessing(image)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = apply_medical_preprocessing(image) # 执行 NLM + CLAHE
         
         mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
         mask = cv2.resize(mask, (256, 256), interpolation=cv2.INTER_NEAREST)
@@ -57,13 +57,11 @@ class BrainMRIDataset(Dataset):
             image = augmented['image']
             mask = augmented['mask']
 
-        # Z-score 标准化 (在转换为 Tensor 之前或之后均可)
-        # 这里使用计算后的均值和标准差，或者简单的全局标准化
+        # Z-score 标准化 (按通道计算，与server.py一致)
         image = image.float()
-        if self.is_train: # 训练时动态计算 Z-score
-            mean = image.mean()
-            std = image.std()
-            image = (image - mean) / (std + 1e-8)
+        mean = image.mean(dim=(1, 2), keepdim=True)
+        std = image.std(dim=(1, 2), keepdim=True)
+        image = (image - mean) / (std + 1e-8)
 
         mask = (mask > 0).float().unsqueeze(0) # 转换为 0/1 二值 Mask
 
