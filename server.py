@@ -52,17 +52,19 @@ async def predict_tumor(file: UploadFile = File(...)):
     nparr = np.frombuffer(contents, np.uint8)
     image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-    # Resize 到模型需要的尺寸
-    img_resized = cv2.resize(image, (256, 256))
-    
-    # 执行高级预处理管线
-    img_preprocessed = advanced_preprocess(img_resized)
+    # 执行高级预处理管线 (在原始分辨率上做，与train_unet.py一致)
+    img_preprocessed = advanced_preprocess(image)
 
-    # 3. Z-score 标准化 (针对当前单张影像)
-    img_float = img_preprocessed.astype(np.float32) / 255.0
+    # BGR -> RGB (与train_unet.py一致)
+    img_rgb = cv2.cvtColor(img_preprocessed, cv2.COLOR_BGR2RGB)
+
+    # Resize 到模型需要的尺寸
+    img_resized = cv2.resize(img_rgb, (256, 256))
+
+    # Z-score 标准化 (按通道计算，ddof=1与torch.std一致，值域[0,255])
+    img_float = img_resized.astype(np.float32)
     mean = np.mean(img_float, axis=(0, 1))
-    std = np.std(img_float, axis=(0, 1))
-    # 加上 1e-8 防止除以 0
+    std = np.std(img_float, axis=(0, 1), ddof=1)
     img_zscore = (img_float - mean) / (std + 1e-8)
 
     # 转为 Tensor 喂给模型
@@ -74,22 +76,22 @@ async def predict_tumor(file: UploadFile = File(...)):
         pred_mask = torch.sigmoid(pred_mask)
         pred_mask = (pred_mask > 0.5).float().squeeze().cpu().numpy()
 
-    # 渲染红色高亮 (在预处理后的清晰图像上渲染)
-    blended_img = img_preprocessed.copy()
-    red_layer = np.zeros_like(img_preprocessed)
-    red_layer[:, :, 2] = 255  
+    # 渲染红色高亮 (在RGB图像上，通道0=R)
+    blended_img = img_resized.copy()
+    red_layer = np.zeros_like(img_resized)
+    red_layer[:, :, 0] = 255
 
     tumor_region = pred_mask > 0 
     tumor_pixels = int(np.sum(tumor_region))
     
     if tumor_pixels > 0:
-        blended_img[tumor_region] = cv2.addWeighted(img_preprocessed[tumor_region], 0.5, red_layer[tumor_region], 0.5, 0)
+        blended_img[tumor_region] = cv2.addWeighted(img_resized[tumor_region], 0.5, red_layer[tumor_region], 0.5, 0)
     
-    # 返回原始和处理后的 Base64 (使用高级预处理后的图像展示，视觉效果震撼)
-    _, buffer_orig = cv2.imencode('.jpg', img_preprocessed)
+    # 返回Base64 (cv2.imencode期望BGR，需转回)
+    _, buffer_orig = cv2.imencode('.jpg', cv2.cvtColor(img_resized, cv2.COLOR_RGB2BGR))
     orig_base64 = base64.b64encode(buffer_orig).decode('utf-8')
 
-    _, buffer_proc = cv2.imencode('.jpg', blended_img)
+    _, buffer_proc = cv2.imencode('.jpg', cv2.cvtColor(blended_img, cv2.COLOR_RGB2BGR))
     proc_base64 = base64.b64encode(buffer_proc).decode('utf-8')
 
     if tumor_pixels == 0:

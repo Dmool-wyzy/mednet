@@ -148,7 +148,7 @@ def train_model():
 
         if current_dice > best_dice:
             best_dice = current_dice
-            torch.save(model.state_dict(), "best_unet_model_v2.pth")
+            torch.save(model.state_dict(), "best_unet_model.pth")
             print("🌟 性能突破！保存新权重...")
 
 if __name__ == '__main__':
